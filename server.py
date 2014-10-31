@@ -1,16 +1,11 @@
 import SocketServer
 import struct
-import logging
-
-console = logging.StreamHandler()
-console.setLevel(logging.DEBUG)
-logger = logging.getLogger("tftp-client")
-logger.addHandler(console)
+import argparse
 
 OP_RRQ = 1
 OP_WRQ = 2
-OP_ACK = 3
-OP_DATA = 4
+OP_DATA = 3
+OP_ACK = 4
 OP_ERROR = 5
 
 class UDPHandler(SocketServer.DatagramRequestHandler):
@@ -37,6 +32,10 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
 
 
 if __name__ == "__main__":
-    HOST, PORT = "localhost", 9999
-    server = SocketServer.UDPServer((HOST, PORT), UDPHandler)
+    parser = argparse.ArgumentParser(description='A simple netascii-only tftp server')
+    parser.add_argument('-p', '--port', type=int, default=69, help='TFTP server port. Defaults to 69.')
+    parser.add_argument('path', type=str, help="Directory of files to serve")
+    args = parser.parse_args()
+
+    server = SocketServer.UDPServer(("localhost", args.port), UDPHandler)
     server.serve_forever()
