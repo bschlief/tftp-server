@@ -30,17 +30,21 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
         filename, mode, _ = data.split("\0")
         return (filename, mode)
 
+    def send_data_packet(self, block_number, msg):
+        fmt = "!HH{}s".format(len(msg))
+        data_packet = struct.pack(fmt, OP_DATA, block_number, msg)
+        self.wfile.write(data_packet)
+
     def handle(self):
         data, socket = self.request
         opcode = self.get_opcode(data[0:2])
 
         if opcode == OP_RRQ:
             filename, mode = self.get_filename_and_mode(data[2:])
+            self.send_data_packet(1, "1" * 512)
 
         elif opcode == OP_ACK:
             print("received an ack")
-
-        socket.sendto(data.upper(), self.client_address)
 
 
 if __name__ == "__main__":
