@@ -17,17 +17,26 @@ DATA_SIZE = 512
 class FileRequestManager(object):
 
     def __init__(self, served_files_path):
+        """
+        Manages and caches files, provides file blocks on request.
+        """
         self.served_files_path = served_files_path
         self.files = {}
 
     def load_file(self, filename):
+        """
+        Loads a file into memory if it hasn't been loaded yet.
+        """
         if filename not in self.files:
             with open(os.path.join(self.served_files_path, filename), "r") as f:
                 self.files[filename] = f.read()
 
     def get_block(self, filename, block_number):
-        block_begin_index = (block_number - 1) * 512
-        block_end_index = block_number * 512
+        """
+        Get the block_number from the specified file
+        """
+        block_begin_index = (block_number - 1) * DATA_SIZE
+        block_end_index = block_number * DATA_SIZE
         return self.files[filename][block_begin_index:block_end_index]
 
 
@@ -41,6 +50,9 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         return opcode[0]
 
     def get_filename_and_mode(self, data):
+        """
+        Conveninence method to get the filename and mode out of a data packet
+        """
         filename, mode, _ = data[2:].split("\0")
         return (filename, mode)
 
@@ -53,10 +65,17 @@ class UDPHandler(SocketServer.BaseRequestHandler):
 
     def pack_data(self, block_number, msg):
         """
-        Pack the data up in a tfpt DATA packet
+        Pack the data up in a tftp DATA packet
         """
         fmt = "!HH{}s".format(len(msg))
         return struct.pack(fmt, OP_DATA, block_number, msg)
+
+    def pack_error(self, msg):
+        """
+        Pack the error message up in a tftp ERROR packet
+        """
+        fmt = "!H{}s".format(len(msg))
+        return struct.pack(fmt, OP_ERROR, msg)
 
     def handle(self):
         """
@@ -74,10 +93,16 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         """
         Take a read request and handle processing of that file on a separate port
         """
-        filename, mode = self.get_filename_and_mode(data)
-        self.server.file_manager.load_file(filename)
-
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        filename, mode = self.get_filename_and_mode(data)
+        try:
+            self.server.file_manager.load_file(filename)
+        except IOError, e:
+            packed_error = self.pack_error(e.strerror)
+            sock.sendto(packed_error, self.client_address)
+            return
+
         block_number = 0
         data_length = DATA_HEADER_SIZE + DATA_SIZE
 
