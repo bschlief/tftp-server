@@ -8,6 +8,18 @@ OP_DATA = 3
 OP_ACK = 4
 OP_ERROR = 5
 
+
+class FileRequestManager(object):
+
+    def __init__(self, file):
+        self.contents = file.getvalue()
+
+    def get_block(self, block_number):
+        block_begin_index = (block_number - 1) * 512
+        block_end_index = block_number * 512
+        return self.contents[block_begin_index:block_end_index]
+
+
 class UDPHandler(SocketServer.DatagramRequestHandler):
 
     def get_opcode(self, packed_opcode):
