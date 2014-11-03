@@ -1,6 +1,8 @@
 import SocketServer
 import struct
 import argparse
+import os
+from cStringIO import StringIO
 
 OP_RRQ = 1
 OP_WRQ = 2
@@ -11,13 +13,19 @@ OP_ERROR = 5
 
 class FileRequestManager(object):
 
-    def __init__(self, file):
-        self.contents = file.getvalue()
+    def __init__(self, served_files_path):
+        self.served_files_path = served_files_path
+        self.files = {}
 
-    def get_block(self, block_number):
+    def load_file(self, filename):
+        if not filename in self.files:
+            with open(os.path.join(self.served_files_path, filename), "r") as f:
+                self.files[filename] = f.read()
+
+    def get_block(self, filename, block_number):
         block_begin_index = (block_number - 1) * 512
         block_end_index = block_number * 512
-        return self.contents[block_begin_index:block_end_index]
+        return self.files[filename][block_begin_index:block_end_index]
 
 
 class UDPHandler(SocketServer.DatagramRequestHandler):
@@ -42,9 +50,19 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
         if opcode == OP_RRQ:
             filename, mode = self.get_filename_and_mode(data[2:])
             self.send_data_packet(1, "1" * 512)
-
         elif opcode == OP_ACK:
             print("received an ack")
+
+
+class FileManagerUDPServer(SocketServer.UDPServer):
+
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, path=os.path.dirname(__file__)):
+        super(FileManagerUDPServer, self).__init__(
+            server_address,
+            RequestHandlerClass,
+            bind_and_activate=bind_and_activate
+        )
+        self.file_manager = FileRequestManager(path)
 
 
 if __name__ == "__main__":
@@ -53,5 +71,5 @@ if __name__ == "__main__":
     parser.add_argument('path', type=str, help="Directory of files to serve")
     args = parser.parse_args()
 
-    server = SocketServer.UDPServer(("localhost", args.port), UDPHandler)
+    server = FileManagerUDPServer(("localhost", args.port), UDPHandler)
     server.serve_forever()
