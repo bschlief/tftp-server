@@ -1,8 +1,8 @@
 import SocketServer
+import socket
 import struct
 import argparse
 import os
-from cStringIO import StringIO
 
 OP_RRQ = 1
 OP_WRQ = 2
@@ -18,7 +18,7 @@ class FileRequestManager(object):
         self.files = {}
 
     def load_file(self, filename):
-        if not filename in self.files:
+        if filename not in self.files:
             with open(os.path.join(self.served_files_path, filename), "r") as f:
                 self.files[filename] = f.read()
 
@@ -27,6 +27,24 @@ class FileRequestManager(object):
         block_end_index = block_number * 512
         return self.files[filename][block_begin_index:block_end_index]
 
+class SocketManager(object):
+    def __init__(self):
+        self.sockets = {}
+
+    def initialize_socket(self, client_address):
+        pass
+
+        # sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # self.sockets[client_address] = sock
+
+    def send_data(self, data, client_address):
+        # print "Sending data to {}".format(client_address)
+        # client_socket = self.sockets[client_address]
+        # client_socket.sendto(data, client_address)
+
+        # s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # s.sendto(data, client_address)
+        pass
 
 class UDPHandler(SocketServer.DatagramRequestHandler):
 
@@ -35,34 +53,50 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
         return opcode[0]
 
     def get_filename_and_mode(self, data):
-        filename, mode, _ = data.split("\0")
+        filename, mode, _ = data[2:].split("\0")
         return (filename, mode)
 
-    def send_data_packet(self, block_number, msg):
+    def get_block_number(self, data):
+        _, block_number = struct.unpack("!HH", data)
+        return block_number
+
+    def pack_data(self, block_number, msg):
         fmt = "!HH{}s".format(len(msg))
-        data_packet = struct.pack(fmt, OP_DATA, block_number, msg)
-        self.wfile.write(data_packet)
+        return struct.pack(fmt, OP_DATA, block_number, msg)
 
     def handle(self):
-        data, socket = self.request
+        data, request_socket = self.request
+
+        print "Received data from {}".format(self.client_address)
+
         opcode = self.get_opcode(data[0:2])
 
-        if opcode == OP_RRQ:
-            filename, mode = self.get_filename_and_mode(data[2:])
-            self.send_data_packet(1, "1" * 512)
-        elif opcode == OP_ACK:
-            print("received an ack")
+        print "Opcode received was {}".format(opcode)
 
+        if opcode == OP_RRQ:
+            filename, mode = self.get_filename_and_mode(data)
+            self.server.file_manager.load_file(filename)
+            block_number = 1
+            raw_data = self.server.file_manager.get_block(filename, block_number)
+            packed_data = self.pack_data(block_number, raw_data)
+            if packed_data == None:
+                raise Exception("Unable to pack data")
+            self.wfile.write(packed_data)
+
+        elif opcode == OP_ACK:
+            block_number = self.get_block_number(data)
+            raw_data = self.server.file_manager.get_block("longtext.txt", block_number + 1)
+            packed_data = self.pack_data(block_number + 1, raw_data)
+            if packed_data == None:
+                raise Exception("Unable to pack data")
+            self.wfile.write(packed_data)
 
 class FileManagerUDPServer(SocketServer.UDPServer):
 
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, path=os.path.dirname(__file__)):
-        super(FileManagerUDPServer, self).__init__(
-            server_address,
-            RequestHandlerClass,
-            bind_and_activate=bind_and_activate
-        )
         self.file_manager = FileRequestManager(path)
+        # self.socket_manager = SocketManager()
+        SocketServer.UDPServer.__init__(self, server_address, RequestHandlerClass, bind_and_activate)
 
 
 if __name__ == "__main__":
@@ -71,5 +105,5 @@ if __name__ == "__main__":
     parser.add_argument('path', type=str, help="Directory of files to serve")
     args = parser.parse_args()
 
-    server = FileManagerUDPServer(("localhost", args.port), UDPHandler)
+    server = FileManagerUDPServer(("localhost", args.port), UDPHandler, path=args.path)
     server.serve_forever()
