@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import SocketServer
 import socket
 import struct
@@ -10,6 +11,8 @@ OP_DATA = 3
 OP_ACK = 4
 OP_ERROR = 5
 
+DATA_HEADER_SIZE = 4
+DATA_SIZE = 512
 
 class FileRequestManager(object):
 
@@ -27,28 +30,13 @@ class FileRequestManager(object):
         block_end_index = block_number * 512
         return self.files[filename][block_begin_index:block_end_index]
 
-class SocketManager(object):
-    def __init__(self):
-        self.sockets = {}
 
-    def initialize_socket(self, client_address):
-        pass
-
-        # sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # self.sockets[client_address] = sock
-
-    def send_data(self, data, client_address):
-        # print "Sending data to {}".format(client_address)
-        # client_socket = self.sockets[client_address]
-        # client_socket.sendto(data, client_address)
-
-        # s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # s.sendto(data, client_address)
-        pass
-
-class UDPHandler(SocketServer.DatagramRequestHandler):
+class UDPHandler(SocketServer.BaseRequestHandler):
 
     def get_opcode(self, packed_opcode):
+        """
+        Convenience method to get the op code out of a data packet.
+        """
         opcode = struct.unpack("!H", packed_opcode)
         return opcode[0]
 
@@ -57,45 +45,59 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
         return (filename, mode)
 
     def get_block_number(self, data):
+        """
+        Convenience method to get a block number out of an ack packet
+        """
         _, block_number = struct.unpack("!HH", data)
         return block_number
 
     def pack_data(self, block_number, msg):
+        """
+        Pack the data up in a tfpt DATA packet
+        """
         fmt = "!HH{}s".format(len(msg))
         return struct.pack(fmt, OP_DATA, block_number, msg)
 
     def handle(self):
+        """
+        Listen for read requests. Spin off a separate socket to handle
+        the actual transfer.
+        """
         data, request_socket = self.request
-
-        print "Received data from {}".format(self.client_address)
 
         opcode = self.get_opcode(data[0:2])
 
-        print "Opcode received was {}".format(opcode)
-
         if opcode == OP_RRQ:
-            filename, mode = self.get_filename_and_mode(data)
-            self.server.file_manager.load_file(filename)
-            block_number = 1
-            raw_data = self.server.file_manager.get_block(filename, block_number)
-            packed_data = self.pack_data(block_number, raw_data)
-            if packed_data == None:
-                raise Exception("Unable to pack data")
-            self.wfile.write(packed_data)
+            self.process_read_request(data)
 
-        elif opcode == OP_ACK:
-            block_number = self.get_block_number(data)
-            raw_data = self.server.file_manager.get_block("longtext.txt", block_number + 1)
-            packed_data = self.pack_data(block_number + 1, raw_data)
-            if packed_data == None:
-                raise Exception("Unable to pack data")
-            self.wfile.write(packed_data)
+    def process_read_request(self, data):
+        """
+        Take a read request and handle processing of that file on a separate port
+        """
+        filename, mode = self.get_filename_and_mode(data)
+        self.server.file_manager.load_file(filename)
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        block_number = 0
+        data_length = DATA_HEADER_SIZE + DATA_SIZE
+
+        while data_length == DATA_HEADER_SIZE + DATA_SIZE:
+            block_number += 1
+            block_data = self.server.file_manager.get_block(filename, block_number)
+            packed_data = self.pack_data(block_number, block_data)
+            data_length = sock.sendto(packed_data, self.client_address)
+
+            # If the data packet was the maximum size, listen for the ack to send
+            # the next packet. If it was less than the maximum size, then the
+            # transfer is complete.
+            if data_length == DATA_HEADER_SIZE + DATA_SIZE:
+                raw_data, _ = sock.recvfrom(DATA_HEADER_SIZE + DATA_SIZE)
+
 
 class FileManagerUDPServer(SocketServer.UDPServer):
 
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, path=os.path.dirname(__file__)):
         self.file_manager = FileRequestManager(path)
-        # self.socket_manager = SocketManager()
         SocketServer.UDPServer.__init__(self, server_address, RequestHandlerClass, bind_and_activate)
 
 
