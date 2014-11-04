@@ -11,6 +11,7 @@ OP_DATA = 3
 OP_ACK = 4
 OP_ERROR = 5
 
+ERROR_HEADER_SIZE = 2
 DATA_HEADER_SIZE = 4
 DATA_SIZE = 512
 
@@ -87,21 +88,28 @@ class UDPHandler(SocketServer.BaseRequestHandler):
         opcode = self.get_opcode(data[0:2])
 
         if opcode == OP_RRQ:
-            self.process_read_request(data)
+            try:
+                self.process_read_request(data)
+            except TypeError, e:
+                data = self.pack_error(str(e))
+                request_socket.sendto(data, self.client_address)
+            except Exception, e:
+                data = self.pack_error(e.strerror)
+                request_socket.sendto(data, self.client_address)
+        if opcode == OP_ERROR:
+            self.process_error(data)
+
+    def get_new_socket(self):
+        return socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def process_read_request(self, data):
         """
         Take a read request and handle processing of that file on a separate port
         """
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock = self.get_new_socket()
 
         filename, mode = self.get_filename_and_mode(data)
-        try:
-            self.server.file_manager.load_file(filename)
-        except IOError, e:
-            packed_error = self.pack_error(e.strerror)
-            sock.sendto(packed_error, self.client_address)
-            return
+        self.server.file_manager.load_file(filename)
 
         block_number = 0
         data_length = DATA_HEADER_SIZE + DATA_SIZE
@@ -118,6 +126,10 @@ class UDPHandler(SocketServer.BaseRequestHandler):
             if data_length == DATA_HEADER_SIZE + DATA_SIZE:
                 raw_data, _ = sock.recvfrom(DATA_HEADER_SIZE + DATA_SIZE)
 
+    def process_error(self, data):
+        fmt = "!H{}s".format(len(data) - ERROR_HEADER_SIZE)
+        opcode, error = struct.unpack(fmt, data)
+        print error
 
 class FileManagerUDPServer(SocketServer.UDPServer):
 
