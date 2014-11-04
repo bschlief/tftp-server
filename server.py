@@ -75,8 +75,10 @@ class UDPHandler(SocketServer.BaseRequestHandler):
 
     def pack_error(self, msg):
         """
-        Pack the error message up in a tftp ERROR packet
+        Pack the error message up in a tftp ERROR packet. Erroneously
+        reports all errors as file not found.  It is correct, but only occaisionally.
 
+        TODO: Fully support all error messages below
         0         Not defined, see error message (if any).
         1         File not found.
         2         Access violation.
