@@ -4,6 +4,7 @@ import struct
 import mock
 from server import UDPHandler, FileRequestManager, FileManagerUDPServer
 from server import OP_RRQ, OP_DATA, OP_ERROR
+from server import TFTP_ERROR_FILE_NOT_FOUND
 import os
 
 class TestUdpHandler(unittest.TestCase):
@@ -58,8 +59,8 @@ class TestUdpHandler(unittest.TestCase):
         handler = UDPHandler(request, self.client_address, self.mock_server)
 
         error_message = "No such file or directory"
-        fmt = "!H{}s".format(len(error_message))
-        expected_error_response = struct.pack(fmt, OP_ERROR, error_message)
+        fmt = "!HH{}sB".format(len(error_message))
+        expected_error_response = struct.pack(fmt, OP_ERROR, TFTP_ERROR_FILE_NOT_FOUND, error_message, 0)
         self.mock_listen_sock.sendto.assert_called_with(expected_error_response, self.client_address)
 
 

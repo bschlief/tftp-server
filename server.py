@@ -15,6 +15,8 @@ ERROR_HEADER_SIZE = 2
 DATA_HEADER_SIZE = 4
 DATA_SIZE = 512
 
+TFTP_ERROR_FILE_NOT_FOUND = 1
+
 class FileRequestManager(object):
 
     def __init__(self, served_files_path):
@@ -74,9 +76,18 @@ class UDPHandler(SocketServer.BaseRequestHandler):
     def pack_error(self, msg):
         """
         Pack the error message up in a tftp ERROR packet
+
+        0         Not defined, see error message (if any).
+        1         File not found.
+        2         Access violation.
+        3         Disk full or allocation exceeded.
+        4         Illegal TFTP operation.
+        5         Unknown transfer ID.
+        6         File already exists.
+        7         No such user.
         """
-        fmt = "!H{}s".format(len(msg))
-        return struct.pack(fmt, OP_ERROR, msg)
+        fmt = "!HH{}sB".format(len(msg))
+        return struct.pack(fmt, OP_ERROR, TFTP_ERROR_FILE_NOT_FOUND, msg, 0)
 
     def handle(self):
         """
