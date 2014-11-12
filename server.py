@@ -54,7 +54,7 @@ class UDPHandler(SocketServer.BaseRequestHandler):
 
     def get_filename_and_mode(self, data):
         """
-        Conveninence method to get the filename and mode out of a data packet
+        Convenience method to get the filename and mode out of a data packet
         """
         filename, mode, _ = data[2:].split("\0")
         return (filename, mode)
@@ -76,7 +76,7 @@ class UDPHandler(SocketServer.BaseRequestHandler):
     def pack_error(self, msg):
         """
         Pack the error message up in a tftp ERROR packet. Erroneously
-        reports all errors as file not found.  It is correct, but only occaisionally.
+        reports all errors as file not found.  It is correct, but only occasionally.
 
         TODO: Fully support all error messages below
         0         Not defined, see error message (if any).
